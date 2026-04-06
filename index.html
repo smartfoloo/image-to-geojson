@@ -1,0 +1,760 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Image to GeoJSON</title>
+  <link rel="icon"
+    href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🗺️</text></svg>">
+  <style>
+    *,
+    *::before,
+    *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background: #0f0f13;
+      color: #e8e8f0;
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      min-height: 100vh;
+      text-align: center;
+    }
+
+    body p {
+      margin: 30px 0px;
+    }
+
+    header {
+      border-bottom: 1px solid #1e1e2e;
+      padding: 16px 32px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .logo {
+      width: 34px;
+      height: 34px;
+      border-radius: 8px;
+      background: linear-gradient(135deg, #6c63ff, #3ecfcf);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+    }
+
+    header h1 {
+      font-size: 17px;
+      font-weight: 700;
+      letter-spacing: -0.4px;
+    }
+
+    .badge {
+      margin-left: auto;
+      font-size: 11px;
+      color: #555;
+      background: #1a1a27;
+      padding: 4px 10px;
+      border-radius: 20px;
+    }
+
+    .layout {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 0px 24px;
+      display: grid;
+      grid-template-columns: 1fr 340px;
+      gap: 24px;
+    }
+
+    .layout.no-image {
+      grid-template-columns: 1fr;
+    }
+
+    #drop-zone {
+      border: 2px dashed #2a2a3e;
+      border-radius: 16px;
+      padding: 80px 40px;
+      text-align: center;
+      cursor: pointer;
+      background: #13131e;
+      transition: border-color 0.2s, background 0.2s;
+    }
+
+    #drop-zone.drag-over {
+      border-color: #6c63ff;
+      background: #16162a;
+    }
+
+    #drop-zone .icon {
+      font-size: 48px;
+      margin-bottom: 16px;
+    }
+
+    #drop-zone h2 {
+      font-size: 18px;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+
+    #drop-zone p {
+      color: #666;
+      font-size: 14px;
+    }
+
+    #canvas-area {
+      display: none;
+    }
+
+    .canvas-topbar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+
+    .canvas-topbar span {
+      font-size: 13px;
+      color: #888;
+    }
+
+    .btn-clear {
+      margin-left: auto;
+      background: #1e1e2e;
+      border: none;
+      color: #aaa;
+      padding: 6px 14px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 12px;
+    }
+
+    .btn-clear:hover {
+      background: #2a2a3e;
+    }
+
+    #canvas-wrap {
+      position: relative;
+      display: inline-block;
+      width: 100%;
+      border-radius: 12px;
+      overflow: hidden;
+      cursor: crosshair;
+      box-shadow: 0 4px 32px rgba(0, 0, 0, .5);
+      border: 1px solid #1e1e2e;
+    }
+
+    #canvas-wrap img {
+      display: block;
+      width: 100%;
+      user-select: none;
+      pointer-events: none;
+      draggable: false;
+    }
+
+    .point-marker {
+      position: absolute;
+      transform: translate(-50%, -50%);
+      pointer-events: none;
+      z-index: 10;
+    }
+
+    .point-dot {
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      border: 2px solid white;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, .6);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .point-dot span {
+      font-size: 7px;
+      font-weight: 700;
+      color: #000;
+      line-height: 1;
+    }
+
+    .h-line-top,
+    .h-line-bottom,
+    .h-line-left,
+    .h-line-right {
+      position: absolute;
+      background: currentColor;
+    }
+
+    .h-line-top {
+      left: 50%;
+      top: -14px;
+      width: 1px;
+      height: 14px;
+      transform: translateX(-50%);
+    }
+
+    .h-line-bottom {
+      left: 50%;
+      bottom: -14px;
+      width: 1px;
+      height: 14px;
+      transform: translateX(-50%);
+    }
+
+    .h-line-left {
+      top: 50%;
+      left: -14px;
+      width: 14px;
+      height: 1px;
+      transform: translateY(-50%);
+    }
+
+    .h-line-right {
+      top: 50%;
+      right: -14px;
+      width: 14px;
+      height: 1px;
+      transform: translateY(-50%);
+    }
+
+    #right-panel {
+      display: none;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .card {
+      background: #13131e;
+      border-radius: 14px;
+      padding: 16px;
+      border: 1px solid #1e1e2e;
+    }
+
+    .card-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: #aaa;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+
+    .card-title small {
+      font-size: 11px;
+      color: #555;
+      font-weight: 400;
+    }
+
+    #points-empty {
+      text-align: center;
+      color: #444;
+      font-size: 13px;
+      padding: 24px 0;
+    }
+
+    #points-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      max-height: 380px;
+      overflow-y: auto;
+    }
+
+    .point-card {
+      background: #0f0f13;
+      border-radius: 10px;
+      padding: 10px;
+      border: 1px solid transparent;
+    }
+
+    .point-card-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+
+    .point-num {
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
+      font-weight: 700;
+      color: #000;
+      flex-shrink: 0;
+    }
+
+    .point-pct {
+      font-size: 11px;
+      color: #666;
+      flex: 1;
+    }
+
+    .btn-remove {
+      background: none;
+      border: none;
+      color: #444;
+      cursor: pointer;
+      font-size: 14px;
+      padding: 0 2px;
+      line-height: 1;
+    }
+
+    .btn-remove:hover {
+      color: #ff6b6b;
+    }
+
+    .coords-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+    }
+
+    .coords-grid label {
+      font-size: 10px;
+      color: #555;
+      display: block;
+      margin-bottom: 3px;
+    }
+
+    .coords-grid input {
+      background: #0f0f13;
+      border: 1px solid #2a2a3e;
+      border-radius: 6px;
+      color: #e8e8f0;
+      padding: 5px 8px;
+      font-size: 12px;
+      width: 100%;
+      outline: none;
+      font-family: inherit;
+    }
+
+    .coords-grid input:focus {
+      border-color: #6c63ff;
+    }
+
+    .coords-grid input.empty {
+      border-color: #3a2a2a;
+    }
+
+    .btn-row {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+
+    .btn {
+      flex: 1;
+      padding: 9px 12px;
+      border-radius: 8px;
+      border: 1px solid;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 600;
+      font-family: inherit;
+      transition: opacity 0.15s;
+    }
+
+    .btn:disabled {
+      opacity: 0.35;
+      cursor: not-allowed;
+    }
+
+    .btn-primary {
+      background: #6c63ff;
+      border-color: #6c63ff;
+      color: #fff;
+    }
+
+    .btn-primary:not(:disabled):hover {
+      background: #7b73ff;
+    }
+
+    .btn-secondary {
+      background: #1e1e2e;
+      border-color: #2a2a3e;
+      color: #aaa;
+    }
+
+    .btn-secondary:not(:disabled):hover {
+      background: #2a2a3e;
+    }
+
+    .btn-success {
+      background: #22a55a;
+      border-color: #22a55a;
+      color: #fff;
+    }
+
+    #output-hint {
+      font-size: 12px;
+      color: #555;
+      background: #0f0f13;
+      border-radius: 8px;
+      padding: 10px 12px;
+    }
+
+    #geojson-pre {
+      display: none;
+      background: #0a0a10;
+      border-radius: 10px;
+      padding: 12px;
+      font-size: 11px;
+      color: #7dd3fc;
+      overflow: auto;
+      max-height: 320px;
+      border: 1px solid #1e1e2e;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      word-break: break-all;
+      font-family: 'Courier New', monospace;
+    }
+
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: #2a2a3e;
+      border-radius: 3px;
+    }
+  </style>
+</head>
+
+<body>
+  <header>
+    <div class="logo">🗺</div>
+    <h1>Image → GeoJSON</h1>
+    <span class="badge">Georeferencer</span>
+  </header>
+  <p>Turn any image into georeferenced GeoJSON by placing control points, assigning lat/lon coordinates, and exporting the result.</p>
+  <div class="layout no-image" id="layout">
+    <div id="left-col">
+      <div id="drop-zone" tabindex="0" role="button" aria-label="Upload image">
+        <div class="icon">🖼️</div>
+        <h2>Drop an image here</h2>
+        <p>or click to browse — PNG, JPG, WebP supported</p>
+      </div>
+      <input id="file-input" type="file" accept="image/*" style="display:none" />
+      <div id="canvas-area">
+        <div class="canvas-topbar">
+          <span>Click the image to place control points</span>
+          <button class="btn-clear" id="btn-clear-image">✕ Clear image</button>
+        </div>
+        <div id="canvas-wrap">
+          <img id="preview-img" src="" alt="preview" />
+        </div>
+      </div>
+    </div>
+    <div id="right-panel">
+      <div class="card">
+        <div class="card-title">
+          Control Points
+          <small id="points-status">Need 2 more</small>
+        </div>
+        <div id="points-empty">Click on the image to place points</div>
+        <div id="points-list"></div>
+      </div>
+      <div class="card">
+        <div class="card-title">GeoJSON Output</div>
+        <div class="btn-row">
+          <button class="btn btn-primary" id="btn-generate" disabled>⚡ Generate</button>
+          <button class="btn btn-secondary" id="btn-copy" disabled style="display:none">Copy</button>
+          <button class="btn btn-secondary" id="btn-download" disabled style="display:none">↓ Save</button>
+        </div>
+        <div id="output-hint">Place at least 2 points with coordinates to generate GeoJSON.</div>
+        <pre id="geojson-pre"></pre>
+      </div>
+    </div>
+  </div>
+  <script>
+    const COLORS = ["#ff6b6b", "#ffd93d", "#6bcb77", "#4d96ff", "#f038ff", "#ff9f43", "#00d2d3", "#ff6348"];
+
+    let imageLoaded = false;
+    let points = [];
+    let lastGeojson = null;
+
+    const dropZone = document.getElementById('drop-zone');
+    const fileInput = document.getElementById('file-input');
+    const canvasArea = document.getElementById('canvas-area');
+    const canvasWrap = document.getElementById('canvas-wrap');
+    const previewImg = document.getElementById('preview-img');
+    const layout = document.getElementById('layout');
+    const rightPanel = document.getElementById('right-panel');
+    const pointsList = document.getElementById('points-list');
+    const pointsEmpty = document.getElementById('points-empty');
+    const pointsStatus = document.getElementById('points-status');
+    const btnGenerate = document.getElementById('btn-generate');
+    const btnCopy = document.getElementById('btn-copy');
+    const btnDownload = document.getElementById('btn-download');
+    const outputHint = document.getElementById('output-hint');
+    const geojsonPre = document.getElementById('geojson-pre');
+    const btnClearImage = document.getElementById('btn-clear-image');
+
+    dropZone.addEventListener('click', () => fileInput.click());
+    dropZone.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') fileInput.click(); });
+    dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+    dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+    dropZone.addEventListener('drop', e => {
+      e.preventDefault(); dropZone.classList.remove('drag-over');
+      loadFile(e.dataTransfer.files[0]);
+    });
+    fileInput.addEventListener('change', () => loadFile(fileInput.files[0]));
+
+    function loadFile(file) {
+      if (!file || !file.type.startsWith('image/')) return;
+      const url = URL.createObjectURL(file);
+      previewImg.src = url;
+      previewImg.onload = () => {
+        points = [];
+        lastGeojson = null;
+        showImageUI();
+        renderPoints();
+        updateGenerateBtn();
+      };
+    }
+
+    function showImageUI() {
+      imageLoaded = true;
+      dropZone.style.display = 'none';
+      canvasArea.style.display = 'block';
+      layout.classList.remove('no-image');
+      rightPanel.style.display = 'flex';
+    }
+
+    btnClearImage.addEventListener('click', () => {
+      imageLoaded = false;
+      points = [];
+      lastGeojson = null;
+      previewImg.src = '';
+      dropZone.style.display = '';
+      canvasArea.style.display = 'none';
+      layout.classList.add('no-image');
+      rightPanel.style.display = 'none';
+      canvasWrap.querySelectorAll('.point-marker').forEach(m => m.remove());
+      geojsonPre.style.display = 'none';
+      btnCopy.style.display = 'none';
+      btnDownload.style.display = 'none';
+      outputHint.style.display = '';
+      fileInput.value = '';
+    });
+
+    canvasWrap.addEventListener('click', e => {
+      if (!imageLoaded) return;
+      const rect = canvasWrap.getBoundingClientRect();
+      const px = (e.clientX - rect.left) / rect.width;
+      const py = (e.clientY - rect.top) / rect.height;
+      points.push({ id: Date.now(), px, py, lat: '', lng: '' });
+      renderPoints();
+      updateGenerateBtn();
+    });
+
+    function renderPoints() {
+      canvasWrap.querySelectorAll('.point-marker').forEach(m => m.remove());
+
+      if (points.length === 0) {
+        pointsEmpty.style.display = '';
+        pointsList.innerHTML = '';
+      } else {
+        pointsEmpty.style.display = 'none';
+        pointsList.innerHTML = '';
+        points.forEach((p, i) => {
+          const color = COLORS[i % COLORS.length];
+
+          const marker = document.createElement('div');
+          marker.className = 'point-marker';
+          marker.style.left = (p.px * 100) + '%';
+          marker.style.top = (p.py * 100) + '%';
+          marker.style.color = color;
+          marker.innerHTML = `
+              <div class="h-line-top"></div>
+              <div class="h-line-bottom"></div>
+              <div class="h-line-left"></div>
+              <div class="h-line-right"></div>
+              <div class="point-dot" style="background:${color}">
+                <span>${i + 1}</span>
+              </div>`;
+          canvasWrap.appendChild(marker);
+
+          const card = document.createElement('div');
+          card.className = 'point-card';
+          card.style.borderColor = color + '33';
+          card.innerHTML = `
+              <div class="point-card-header">
+                <div class="point-num" style="background:${color}">${i + 1}</div>
+                <span class="point-pct">px: ${(p.px * 100).toFixed(1)}%, py: ${(p.py * 100).toFixed(1)}%</span>
+                <button class="btn-remove" data-id="${p.id}" title="Remove">✕</button>
+              </div>
+              <div class="coords-grid">
+                <div>
+                  <label>Latitude</label>
+                  <input type="number" placeholder="-90 to 90" value="${p.lat}" data-id="${p.id}" data-field="lat" class="${p.lat === '' ? 'empty' : ''}" />
+                </div>
+                <div>
+                  <label>Longitude</label>
+                  <input type="number" placeholder="-180 to 180" value="${p.lng}" data-id="${p.id}" data-field="lng" class="${p.lng === '' ? 'empty' : ''}" />
+                </div>
+              </div>`;
+          pointsList.appendChild(card);
+        });
+      }
+
+      const filled = points.filter(p => p.lat !== '' && p.lng !== '').length;
+      if (points.length < 2) {
+        pointsStatus.textContent = `Need ${2 - points.length} more`;
+      } else if (filled < points.length) {
+        pointsStatus.textContent = `${filled}/${points.length} filled`;
+      } else {
+        pointsStatus.textContent = `${points.length} placed ✓`;
+      }
+    }
+
+    pointsList.addEventListener('input', e => {
+      if (e.target.tagName !== 'INPUT') return;
+      const id = parseInt(e.target.dataset.id);
+      const field = e.target.dataset.field;
+      const p = points.find(p => p.id === id);
+      if (p) {
+        p[field] = e.target.value;
+        e.target.classList.toggle('empty', e.target.value === '');
+      }
+      updateGenerateBtn();
+    });
+
+    pointsList.addEventListener('click', e => {
+      const btn = e.target.closest('.btn-remove');
+      if (!btn) return;
+      const id = parseInt(btn.dataset.id);
+      points = points.filter(p => p.id !== id);
+      renderPoints();
+      updateGenerateBtn();
+    });
+
+    function updateGenerateBtn() {
+      const canGen = points.length >= 2 && points.every(p => p.lat !== '' && p.lng !== '');
+      btnGenerate.disabled = !canGen;
+    }
+
+    function solveAffine(pts) {
+      const n = pts.length;
+      const X = pts.map(p => [p.px, p.py, 1]);
+      const Ylat = pts.map(p => parseFloat(p.lat));
+      const Ylng = pts.map(p => parseFloat(p.lng));
+
+      function dot(a, b) {
+        const m = a.length, k = a[0].length, nn = b[0].length;
+        const r = Array.from({ length: m }, () => Array(nn).fill(0));
+        for (let i = 0; i < m; i++) for (let j = 0; j < nn; j++) for (let l = 0; l < k; l++) r[i][j] += a[i][l] * b[l][j];
+        return r;
+      }
+      function transpose(a) { return a[0].map((_, j) => a.map(r => r[j])); }
+      function inv3(m) {
+        const [[a, b, c], [d, e, f], [g, h, i]] = m;
+        const det = a * (e * i - f * h) - b * (d * i - f * g) + c * (d * h - e * g);
+        return [
+          [(e * i - f * h) / det, (c * h - b * i) / det, (b * f - c * e) / det],
+          [(f * g - d * i) / det, (a * i - c * g) / det, (c * d - a * f) / det],
+          [(d * h - e * g) / det, (b * g - a * h) / det, (a * e - b * d) / det],
+        ];
+      }
+
+      const Xt = transpose(X), XtX = dot(Xt, X), XtX_inv = inv3(XtX);
+
+      function solveVec(Y) {
+        const XtY = Xt.map(row => row.reduce((s, v, k) => s + v * Y[k], 0));
+        return XtX_inv.map(row => row.reduce((s, v, k) => s + v * XtY[k], 0));
+      }
+
+      const cLat = solveVec(Ylat), cLng = solveVec(Ylng);
+      return (px, py) => ({
+        lat: cLat[0] * px + cLat[1] * py + cLat[2],
+        lng: cLng[0] * px + cLng[1] * py + cLng[2],
+      });
+    }
+
+    function buildGeoJSON(pts) {
+      const transform = solveAffine(pts);
+      const corners = [[0, 1], [1, 1], [1, 0], [0, 0], [0, 1]].map(([px, py]) => {
+        const { lat, lng } = transform(px, py);
+        return [parseFloat(lng.toFixed(8)), parseFloat(lat.toFixed(8))];
+      });
+
+      const features = [
+        {
+          type: "Feature",
+          properties: { name: "image_extent" },
+          geometry: { type: "Polygon", coordinates: [corners] }
+        },
+        ...pts.map((p, i) => {
+          const { lat, lng } = transform(p.px, p.py);
+          return {
+            type: "Feature",
+            properties: {
+              id: i + 1,
+              pixel_x_pct: parseFloat((p.px * 100).toFixed(2)),
+              pixel_y_pct: parseFloat((p.py * 100).toFixed(2)),
+              input_lat: parseFloat(p.lat),
+              input_lng: parseFloat(p.lng),
+            },
+            geometry: {
+              type: "Point",
+              coordinates: [parseFloat(lng.toFixed(8)), parseFloat(lat.toFixed(8))]
+            }
+          };
+        })
+      ];
+
+      return { type: "FeatureCollection", features };
+    }
+
+    btnGenerate.addEventListener('click', () => {
+      lastGeojson = buildGeoJSON(points);
+      const json = JSON.stringify(lastGeojson, null, 2);
+      geojsonPre.textContent = json;
+      geojsonPre.style.display = 'block';
+      outputHint.style.display = 'none';
+      btnCopy.style.display = '';
+      btnCopy.disabled = false;
+      btnDownload.style.display = '';
+      btnDownload.disabled = false;
+      btnCopy.textContent = 'Copy';
+      btnCopy.className = 'btn btn-secondary';
+    });
+
+    btnCopy.addEventListener('click', () => {
+      if (!lastGeojson) return;
+      navigator.clipboard.writeText(JSON.stringify(lastGeojson, null, 2)).then(() => {
+        btnCopy.textContent = '✓ Copied';
+        btnCopy.className = 'btn btn-success';
+        setTimeout(() => {
+          btnCopy.textContent = 'Copy';
+          btnCopy.className = 'btn btn-secondary';
+        }, 2000);
+      });
+    });
+
+    btnDownload.addEventListener('click', () => {
+      if (!lastGeojson) return;
+      const blob = new Blob([JSON.stringify(lastGeojson, null, 2)], { type: 'application/json' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'georeferenced.geojson';
+      a.click();
+    });
+  </script>
+</body>
+
+</html>
